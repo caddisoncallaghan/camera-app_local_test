@@ -32,7 +32,10 @@ last_person_notification_by_camera = {}
 PERSON_DEDUPE_MINUTES = 10
 
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1"
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY") or None
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL") or "llava"
+OLLAMA_TEXT_MODEL = os.getenv("OLLAMA_TEXT_MODEL") or "llama3.2"
 UNIFI_USERNAME = os.getenv("UNIFI_USERNAME")
 UNIFI_PASSWORD = os.getenv("UNIFI_PASSWORD")
 UNIFI_HOST = os.getenv("UNIFI_HOST", "192.168.1.1")  # Default value if not set
@@ -141,17 +144,15 @@ def setup_logging(quiet=False):
     
     return logger
 
-def check_openai_key():
-    """Check if OpenAI API key is set."""
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY not set")
-        exit(1)
-
 def check_credentials(notify_enabled=False):
     """Check if all required credentials are set."""
     missing_vars = []
-    if not OPENAI_API_KEY:
-        missing_vars.append("OPENAI_API_KEY")
+    if not OLLAMA_BASE_URL:
+        missing_vars.append("OLLAMA_BASE_URL")
+    if not OLLAMA_VISION_MODEL:
+        missing_vars.append("OLLAMA_VISION_MODEL")
+    if not OLLAMA_TEXT_MODEL:
+        missing_vars.append("OLLAMA_TEXT_MODEL")
     if not UNIFI_USERNAME:
         missing_vars.append("UNIFI_USERNAME")
     if not UNIFI_PASSWORD:
@@ -282,7 +283,15 @@ async def callback(msg: WSSubscriptionMessage):
                 
                 # Process the image
                 try:
-                    analysis, image_path = await process_camera_image(protect, camera, formatted_prompt, OPENAI_API_KEY, test_mode)
+                    analysis, image_path = await process_camera_image(
+                        protect,
+                        camera,
+                        formatted_prompt,
+                        OLLAMA_BASE_URL,
+                        OLLAMA_API_KEY,
+                        OLLAMA_VISION_MODEL,
+                        test_mode,
+                    )
                     if not analysis:
                         logger.error(f"no analysis for image from {camera.name}.")
                         return
@@ -329,7 +338,13 @@ async def callback(msg: WSSubscriptionMessage):
                             if is_person_event(first_line):
                                 prev = last_person_notification_by_camera.get(camera_name)
                                 if prev and (current_time - prev["timestamp"]) < timedelta(minutes=PERSON_DEDUPE_MINUTES):
-                                    if message and compare_description(prev["description"], message, OPENAI_API_KEY):
+                                    if message and compare_description(
+                                        prev["description"],
+                                        message,
+                                        OLLAMA_BASE_URL,
+                                        OLLAMA_API_KEY,
+                                        OLLAMA_TEXT_MODEL,
+                                    ):
                                         logger.info(f"Skipping notification (person dedupe) within {PERSON_DEDUPE_MINUTES} minutes for {camera_name}")
                                         return
 
@@ -416,7 +431,7 @@ async def main():
         return
 
     if test_mode:
-        logger.warning("Test mode enabled - sending all images to OpenAI for analysis, this can get expensive!")
+        logger.warning("Test mode enabled - sending all images to Ollama for analysis, this can be resource intensive!")
 
     camera_filter = CAMERA_FILTER
     default_camera = None
