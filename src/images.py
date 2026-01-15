@@ -70,17 +70,22 @@ async def save_camera_image(protect, camera, timestamp=None, test_mode=False):
     
     return str(filepath)
 
-async def analyze_image(image_path, prompt, api_key):
-    """Analyze image using OpenAI SDK."""
+def build_ollama_client(base_url: str, api_key: str | None, timeout: float) -> OpenAI:
+    """Create an OpenAI-compatible client pointed at Ollama."""
+    resolved_key = api_key or "ollama"
+    return OpenAI(base_url=base_url, api_key=resolved_key, timeout=timeout)
+
+async def analyze_image(image_path, prompt, base_url, api_key, vision_model):
+    """Analyze image using Ollama's OpenAI-compatible API."""
     try:
         # Encode image to base64 data URL
         with open(image_path, "rb") as f:
             base64_image = base64.b64encode(f.read()).decode("utf-8")
 
-        client = OpenAI(api_key=api_key, timeout=20.0)
+        client = build_ollama_client(base_url, api_key, timeout=20.0)
 
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=vision_model,
             messages=[
                 {
                     "role": "user",
@@ -101,14 +106,24 @@ async def analyze_image(image_path, prompt, api_key):
         logger.error(f"analyze_image exception: {e}")
         return None
 
-async def process_camera_image(protect, camera, prompt, api_key, test_mode=False):
+async def process_camera_image(
+    protect,
+    camera,
+    prompt,
+    base_url,
+    api_key,
+    vision_model,
+    test_mode=False,
+):
     """Save and analyze a camera image.
     
     Args:
         protect: ProtectApiClient instance
         camera: Camera instance
         prompt: Formatted prompt for analysis
-        api_key: OpenAI API key
+        base_url: Ollama OpenAI-compatible base URL
+        api_key: Optional Ollama API key
+        vision_model: Ollama vision model name
         test_mode: Whether to force analysis regardless of motion detection
     
     Returns:
@@ -118,7 +133,7 @@ async def process_camera_image(protect, camera, prompt, api_key, test_mode=False
         image_path = await save_camera_image(protect, camera, test_mode=test_mode)
         if not image_path:
             return None, None
-        analysis = await analyze_image(image_path, prompt, api_key)
+        analysis = await analyze_image(image_path, prompt, base_url, api_key, vision_model)
         return analysis, image_path
     except Exception as e:        
         # Get current timestamp
@@ -137,12 +152,18 @@ async def process_camera_image(protect, camera, prompt, api_key, test_mode=False
         
         return None, None
 
-def compare_description(desc_a: str, desc_b: str, api_key: str) -> bool:
-    """Compare two person descriptions using OpenAI SDK to decide if they are the same person.
+def compare_description(
+    desc_a: str,
+    desc_b: str,
+    base_url: str,
+    api_key: str | None,
+    text_model: str,
+) -> bool:
+    """Compare two person descriptions using Ollama's OpenAI-compatible API to decide if they are the same person.
     Returns True if they likely refer to the same person, False otherwise.
     """
     try:
-        client = OpenAI(api_key=api_key, timeout=10)
+        client = build_ollama_client(base_url, api_key, timeout=10)
 
         system_prompt = (
             "Compare two short surveillance descriptions of people and answer with exactly one word: "
@@ -157,7 +178,7 @@ def compare_description(desc_a: str, desc_b: str, api_key: str) -> bool:
         )
 
         completion = client.chat.completions.create(
-            model="gpt-4.1-nano",
+            model=text_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -172,4 +193,3 @@ def compare_description(desc_a: str, desc_b: str, api_key: str) -> bool:
     except Exception as e:
         logger.error(f"compare_description exception: {e}")
         return False
-

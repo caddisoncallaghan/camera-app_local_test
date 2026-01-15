@@ -1,6 +1,6 @@
 # AI Unifi Camera Security Monitor
 
-A Python application that monitors UniFi Protect security cameras and uses OpenAI's GPT-4o Vision LLM to detect specific events. Thanks to the LLM, the rules for events can be very complex, i.e. you can monitor parking spots, look for Racoons or check the weather. If GPT-4o understands it, it will work.
+A Python application that monitors UniFi Protect security cameras and uses a local Ollama-hosted vision model to detect specific events. Thanks to the LLM, the rules for events can be very complex, i.e. you can monitor parking spots, look for Racoons or check the weather. If your chosen vision model understands it, it will work.
 
 The system analyzes camera feeds in real-time and can send notifications with images via Pushover when events are detected. It is written in python, runs on a host or in a Docker container, is open source (Apache 2.0) and relatively cheap to operate (for me about ~$0.25/day).
 
@@ -8,7 +8,7 @@ The system analyzes camera feeds in real-time and can send notifications with im
 
 The application offers real-time monitoring of Unifi Protect security cameras. In a nutshell it:
 - Monitors the cameras to see if an event is in progress
-- If yes, it will take an image every 10 seconds and send it to an OpenAI image model for analysis
+- If yes, it will take an image every 10 seconds and send it to a local Ollama image model for analysis
 - What to look for in the image can be steered via a prompt (e.g. suspicious people, racoons, a parking spot being empty etc.)
 - It supports monitoring multiple cameras or only a single one
 
@@ -62,12 +62,15 @@ The application requires several environment variables to be set. You can set th
 
 ### Required Variables
 
-- `OPENAI_API_KEY`: Your OpenAI API key for image analysis
+- `OLLAMA_BASE_URL`: Base URL for the local Ollama OpenAI-compatible API (default: "http://localhost:11434/v1")
+- `OLLAMA_VISION_MODEL`: Ollama vision model for image analysis (default: "llava")
+- `OLLAMA_TEXT_MODEL`: Ollama text model for description comparison (default: "llama3.2")
 - `UNIFI_USERNAME`: Your UniFi Protect username
 - `UNIFI_PASSWORD`: Your UniFi Protect password
 
 ### Optional Variables
 
+- `OLLAMA_API_KEY`: Optional API key if your Ollama proxy requires one
 - `UNIFI_HOST`: UniFi Protect host address (default: "192.168.1.1")
 - `UNIFI_PORT`: UniFi Protect port (default: 443)
 - `CAMERA_FILTER`: Name of a specific camera to monitor (if not set, all cameras will be monitored)
@@ -83,8 +86,10 @@ The application requires several environment variables to be set. You can set th
 
 Example `.env` file:
 ```bash
-# OpenAI API key for image analysis
-OPENAI_API_KEY=sk-your-openai-api-key
+# Ollama local API configuration
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_VISION_MODEL=llava
+OLLAMA_TEXT_MODEL=llama3.2
 
 # UniFi Protect credentials
 UNIFI_USERNAME=your-unifi-username
@@ -107,7 +112,7 @@ TIMEZONE=America/Los_Angeles
 
 The application supports the following command line arguments:
 
-- `--test`: Enable test mode to analyze all images (not just when motion is detected). Note: This can get expensive as it sends all images to OpenAI for analysis.
+- `--test`: Enable test mode to analyze all images (not just when motion is detected). Note: This can be resource intensive as it sends all images to Ollama for analysis.
 - `--quiet`: Disable console output (logs will still be written to file)
 - `--notify`: Enable Pushover notifications for alarms and observations (default is off)
 - `--testalarm`: Send a test alarm notification and exit (useful for testing notification setup)
@@ -150,7 +155,7 @@ uv run --env-file .env src/main.py --testalarm
 
 ## Docker Container
 
-The application can be run in a Docker container, which provides an isolated environment with all dependencies pre-installed. You need outbound connectivity from the container to the Ubiqiti system and OpenAI.
+The application can be run in a Docker container, which provides an isolated environment with all dependencies pre-installed. You need outbound connectivity from the container to the Ubiqiti system and access to your Ollama instance.
 
 1. Build the container:
    ```bash
@@ -162,9 +167,8 @@ The application can be run in a Docker container, which provides an isolated env
    docker run -it --env-file .env camera-app
    ```
 
-The container will automatically start the application with notifications enabled.
+The container will automatically start the application with notifications enabled. Ensure the container can reach your Ollama instance (e.g., via host networking or a reachable base URL).
 
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See the LICENSE file for more details.
-
